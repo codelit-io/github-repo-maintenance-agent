@@ -1,0 +1,21 @@
+{
+  "contextPaths": [
+    "fixtures/project/package.json",
+    "fixtures/project/src/message.js",
+    "fixtures/project/test/message.test.js"
+  ],
+  "allowedPaths": [
+    "fixtures/project/src/",
+    "fixtures/project/test/"
+  ],
+  "blockedPaths": [
+    "package-lock.json"
+  ],
+  "verifyCommands": [
+    "npm run test:fixture"
+  ],
+  "maxContextBytes": 100000,
+  "maxPatchBytes": 50000,
+  "maxChangedFiles": 3,
+  "maxChangedLines": 300
+}

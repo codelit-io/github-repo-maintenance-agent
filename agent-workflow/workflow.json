@@ -1,0 +1,349 @@
+{
+  "title": "Claude Code: Repo Maintenance Agent",
+  "description": "A Claude Code-style workflow for scoped engineering maintenance: it reads issues, loads repo context, plans a narrow patch, runs checks, and opens a reviewable PR with evidence instead of pretending the merge is done.",
+  "audience": "Small engineering teams that want autonomous repo help but still want humans owning scope, review, and merge decisions",
+  "goal": "Turn routine maintenance issues into clean pull requests with tests, logs, and a clear human review boundary.",
+  "triggers": [
+    {
+      "id": "trigger-issue-ready",
+      "name": "Issue ready",
+      "source": "GitHub",
+      "event": "label: claude-ready",
+      "description": "A repo issue is scoped tightly enough for an agent to attempt."
+    },
+    {
+      "id": "trigger-ci-failure",
+      "name": "CI failure",
+      "source": "CI",
+      "event": "workflow.failed",
+      "description": "A failing check asks the agent to diagnose and propose a fix."
+    }
+  ],
+  "tools": [
+    {
+      "id": "tool-github",
+      "name": "GitHub",
+      "type": "repo",
+      "description": "Read issues, branches, files, diffs, and open pull requests.",
+      "authMode": "oauth",
+      "riskLevel": "high"
+    },
+    {
+      "id": "tool-ci",
+      "name": "CI Runner",
+      "type": "runtime",
+      "connectorId": "github",
+      "executorId": "github-actions",
+      "executionConfig": {
+        "githubActions": {
+          "operation": "inspect"
+        }
+      },
+      "description": "Inspect GitHub Actions lint, typecheck, test, and build failures.",
+      "authMode": "oauth",
+      "riskLevel": "medium"
+    },
+    {
+      "id": "tool-docs",
+      "name": "Repo Instructions",
+      "type": "knowledge",
+      "connectorId": "github",
+      "executorId": "architecture-docs",
+      "executionConfig": {
+        "architecturePaths": [
+          "README.md",
+          "AGENTS.md",
+          "CONTRIBUTING.md",
+          "docs/architecture.md"
+        ]
+      },
+      "description": "Load repository instructions, contribution docs, ADRs, and test guidance.",
+      "authMode": "oauth",
+      "riskLevel": "low"
+    },
+    {
+      "id": "tool-linear",
+      "name": "Linear",
+      "type": "ticketing",
+      "description": "Read acceptance criteria and update task status after a PR is opened.",
+      "authMode": "oauth",
+      "riskLevel": "medium"
+    }
+  ],
+  "agents": [
+    {
+      "id": "agent-scope",
+      "name": "Scope Reader",
+      "role": "Decides whether the task is narrow enough for autonomous work.",
+      "responsibilities": [
+        "Read issue and linked context",
+        "Reject broad refactors",
+        "Name files and tests likely in scope"
+      ],
+      "input": "Issue, labels, repo rules, and owner notes",
+      "output": "Scope decision and implementation boundary",
+      "tools": [
+        "tool-github",
+        "tool-docs",
+        "tool-linear"
+      ],
+      "modelPreference": "Claude code-capable reasoning model",
+      "escalationPolicy": "Reject tasks touching auth, billing, migrations, or unclear product behavior without owner approval."
+    },
+    {
+      "id": "agent-context",
+      "name": "Repo Context Loader",
+      "role": "Finds the minimum code and docs needed for the patch.",
+      "responsibilities": [
+        "Read relevant files",
+        "Load local instructions",
+        "Find test entry points"
+      ],
+      "input": "Approved scope",
+      "output": "Context bundle and test plan",
+      "tools": [
+        "tool-github",
+        "tool-docs"
+      ],
+      "modelPreference": "Long-context code model",
+      "escalationPolicy": "Ask a human when repo instructions conflict."
+    },
+    {
+      "id": "agent-patch",
+      "name": "Patch Author",
+      "role": "Applies the smallest viable change on a branch.",
+      "responsibilities": [
+        "Create branch",
+        "Edit scoped files",
+        "Keep diff reviewable"
+      ],
+      "input": "Context bundle and implementation plan",
+      "output": "Patch summary and branch",
+      "tools": [
+        "tool-github"
+      ],
+      "modelPreference": "Claude Code or Claude Agent SDK route",
+      "escalationPolicy": "Stop if changes spill outside the approved file boundary."
+    },
+    {
+      "id": "agent-verifier",
+      "name": "Check Runner",
+      "role": "Runs checks and turns failures into evidence or limited fix attempts.",
+      "responsibilities": [
+        "Run checks",
+        "Summarize logs",
+        "Retry small fixes once"
+      ],
+      "input": "Patch and test plan",
+      "output": "Verification report and PR notes",
+      "tools": [
+        "tool-ci",
+        "tool-github"
+      ],
+      "modelPreference": "Code reasoning model",
+      "escalationPolicy": "Escalate after one failed retry or flaky infrastructure failure."
+    }
+  ],
+  "steps": [
+    {
+      "id": "step-scope",
+      "title": "Read task scope",
+      "actor": "agent-scope",
+      "action": "Classify task risk, ownership, and likely files.",
+      "onSuccess": "Create a context-loading plan.",
+      "onFailure": "Ask issue owner for a smaller task.",
+      "next": [
+        "step-context"
+      ]
+    },
+    {
+      "id": "step-context",
+      "title": "Load repo context",
+      "actor": "agent-context",
+      "action": "Read instructions, code, tests, and ownership notes.",
+      "onSuccess": "Draft patch plan.",
+      "onFailure": "Return missing-context handoff.",
+      "next": [
+        "step-patch"
+      ]
+    },
+    {
+      "id": "step-patch",
+      "title": "Apply narrow patch",
+      "actor": "agent-patch",
+      "action": "Create a branch and make the scoped change.",
+      "onSuccess": "Run verification checks.",
+      "onFailure": "Attach partial diff and stop.",
+      "next": [
+        "step-check"
+      ]
+    },
+    {
+      "id": "step-check",
+      "title": "Verify and open PR",
+      "actor": "agent-verifier",
+      "action": "Run checks, summarize logs, and open a draft PR.",
+      "onSuccess": "Notify the human reviewer.",
+      "onFailure": "Open a handoff issue with exact failure logs.",
+      "next": []
+    }
+  ],
+  "modelRoutes": [
+    {
+      "id": "route-scope",
+      "task": "Scope and risk reading",
+      "provider": "Anthropic",
+      "model": "Claude Sonnet class",
+      "reason": "Strong codebase reasoning and instruction following.",
+      "fallback": "OpenAI reasoning model"
+    },
+    {
+      "id": "route-patch",
+      "task": "Patch authoring",
+      "provider": "Anthropic",
+      "model": "Claude Code-capable model",
+      "reason": "Best fit for multi-file repo edits.",
+      "fallback": "OpenAI code-capable model"
+    },
+    {
+      "id": "route-logs",
+      "task": "Test log diagnosis",
+      "provider": "Gemini",
+      "model": "Gemini Pro class",
+      "reason": "Large logs and code context benefit from long context.",
+      "fallback": "Claude Sonnet class"
+    }
+  ],
+  "guardrails": [
+    {
+      "id": "guardrail-pr-only",
+      "title": "PR-only boundary",
+      "policy": "The agent can draft pull requests but cannot merge, deploy, or approve its own work.",
+      "severity": "high"
+    },
+    {
+      "id": "guardrail-scope",
+      "title": "Scope containment",
+      "policy": "Reject tasks that require broad refactors, unclear product choices, or unrelated files.",
+      "severity": "high"
+    },
+    {
+      "id": "guardrail-secrets",
+      "title": "No secret exposure",
+      "policy": "Never print, create, or modify secret values in code, logs, or PR comments.",
+      "severity": "high"
+    }
+  ],
+  "evaluations": [
+    {
+      "id": "eval-diff-scope",
+      "title": "Diff scope",
+      "metric": "Sampled PRs contain only approved files",
+      "threshold": "95%"
+    },
+    {
+      "id": "eval-review-quality",
+      "title": "Review usefulness",
+      "metric": "Human reviewers accept PR notes as useful",
+      "threshold": "75%"
+    },
+    {
+      "id": "eval-checks",
+      "title": "Check honesty",
+      "metric": "PRs include passing checks or honest failure logs",
+      "threshold": "100%"
+    }
+  ],
+  "deployTargets": [
+    "GitHub App",
+    "Claude Agent SDK worker",
+    "Sandboxed repo runner",
+    "CI log store",
+    "Pull request audit log"
+  ],
+  "skills": [
+    {
+      "id": "skill-workflow-contract",
+      "name": "Workflow Contract Skill",
+      "kind": "workflow",
+      "description": "Loads the workflow goal, allowed actions, escalation policy, and output contract before the agent plans work.",
+      "activation": "Load before task planning, tool selection, or final response generation.",
+      "instructions": "Treat the workflow spec as the source of truth. Confirm trigger, requester, allowed tools, approval requirements, and expected output before acting.",
+      "resources": [
+        "workflow.json",
+        "approval-policy.md",
+        "operator-runbook.md"
+      ],
+      "scripts": [
+        "validate-workflow-contract.ts"
+      ],
+      "riskLevel": "medium"
+    },
+    {
+      "id": "skill-claude-code-operator",
+      "name": "Claude Code Operator Skill",
+      "kind": "workflow",
+      "description": "A workflow skill that captures the operating contract, tool boundaries, and escalation rules for Claude Code: Repo Maintenance Agent.",
+      "activation": "Load when this template starts planning, tool selection, or final response composition.",
+      "instructions": "Confirm the trigger, requester, allowed tools, output contract, and approval gates before taking action. Keep facts source-linked and stop before any irreversible action.",
+      "resources": [
+        "workflow-contract.md",
+        "tool-boundaries.md",
+        "handoff-template.md"
+      ],
+      "scripts": [
+        "validate-approval-gates.ts",
+        "score-workflow-output.ts"
+      ],
+      "riskLevel": "medium"
+    },
+    {
+      "id": "skill-permission-gates",
+      "name": "Permission Gate Skill",
+      "kind": "policy",
+      "description": "Centralizes high-risk action checks for writes, secrets, customer data, billing, deploys, and public communications.",
+      "activation": "Load before calling any write-capable MCP tool or connector.",
+      "instructions": "Classify the action risk, check requester scope, require approval for high-risk calls, and record an audit note.",
+      "resources": [
+        "risk-matrix.md",
+        "data-access-policy.md"
+      ],
+      "scripts": [
+        "classify-action-risk.ts"
+      ],
+      "riskLevel": "high"
+    }
+  ],
+  "mcpServers": [
+    {
+      "id": "mcp-claude-code-workspace",
+      "name": "Claude Code Workspace MCP",
+      "transport": "remote",
+      "description": "Exposes task resources, prompt templates, connector tools, and audit records behind a permission-aware boundary.",
+      "capabilities": [
+        "tools",
+        "resources",
+        "prompts"
+      ],
+      "exposes": [
+        "task.read",
+        "sources.search",
+        "handoff.prompt",
+        "audit.write"
+      ],
+      "authMode": "service-account",
+      "approvalPolicy": "Write actions and external notifications require task-scoped approval.",
+      "riskLevel": "medium"
+    }
+  ],
+  "harnesses": [
+    {
+      "id": "harness-claude-code-release",
+      "name": "Claude Code Release Harness",
+      "type": "eval",
+      "description": "Runs scenario checks, permission checks, and output-quality gates before the workflow is promoted.",
+      "runsWhen": "Before production rollout and whenever prompts, tools, or policies change.",
+      "passCriteria": "Critical scenarios pass, sources are present for factual claims, and approval gates fire for risky actions."
+    }
+  ]
+}

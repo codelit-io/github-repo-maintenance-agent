@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "workflow": "agent-workflow/workflow.json",
+  "template": "claude-code-repo-maintenance-agent",
+  "openInCodelit": "https://codelit.io/agents/claude-code-repo-maintenance-agent?sample=1&source=github&utm_source=github&utm_medium=repository&utm_campaign=github_open_source&utm_content=github-repo-maintenance-agent"
+}

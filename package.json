@@ -1,0 +1,29 @@
+{
+  "name": "@codelit/github-repo-maintenance-agent",
+  "version": "1.0.0",
+  "description": "BYOK issue-to-reviewed-patch runner with path limits, checks, and draft-PR-only GitHub output.",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "repo-maintenance": "bin/repo-maintenance.mjs"
+  },
+  "files": [
+    "agent-workflow",
+    "bin",
+    "src"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "maintain": "node bin/repo-maintenance.mjs",
+    "preview": "node bin/repo-maintenance.mjs preview",
+    "test": "node --test",
+    "test:fixture": "node --test fixtures/project/test",
+    "verify": "node bin/repo-maintenance.mjs --help && npm test"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.57.0",
+    "openai": "^5.8.0"
+  }
+}

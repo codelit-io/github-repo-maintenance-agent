@@ -1,0 +1,4 @@
+node_modules/
+.codelit/
+.env
+.DS_Store

@@ -23,7 +23,7 @@
     "verify": "node bin/repo-maintenance.mjs --help && npm test"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.115.0",
+    "@anthropic-ai/sdk": "^0.128.0",
     "openai": "^7.1.0"
   }
 }
